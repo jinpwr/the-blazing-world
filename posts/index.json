@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "slug": "first-entry",
+    "title": "first entry",
+    "date": "2026-08-18",
+    "summary": "test",
+    "tags": ""
+  }
+]
