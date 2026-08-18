@@ -5,5 +5,12 @@
     "date": "2026-08-18",
     "summary": "test",
     "tags": ""
+  },
+  {
+    "slug": "second-entry",
+    "title": "second entry",
+    "date": "2026-08-18",
+    "summary": "this is the second entry.",
+    "tags": "character design"
   }
 ]
