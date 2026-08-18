@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Write</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead" id="masthead"></header>
+
+  <main class="admin">
+
+    <!-- 1. Connect -->
+    <section id="gate" hidden>
+      <h1 class="title" style="font-size:1.5rem;margin:0 0 1rem">Connect to GitHub</h1>
+      <p class="note" style="margin-bottom:1.5rem">
+        Paste a fine-grained personal access token with <strong>Contents: Read and write</strong>
+        on <span id="repo-name"></span>. It is stored in this browser only and is sent
+        straight to github.com — use your own machine.
+      </p>
+      <div class="field">
+        <label for="token">Access token</label>
+        <input class="input" id="token" type="password" autocomplete="off" placeholder="github_pat_…">
+      </div>
+      <button class="btn btn-primary" id="connect" type="button">Connect</button>
+      <span class="status" id="gate-status"></span>
+    </section>
+
+    <!-- 2. Post list -->
+    <section id="browse" hidden>
+      <div class="toolbar" style="margin-top:0;border-top:0;padding-top:0">
+        <button class="btn btn-primary" id="new-post" type="button">New post</button>
+        <span class="spacer"></span>
+        <span class="status" id="browse-status"></span>
+        <button class="btn" id="sign-out" type="button">Sign out</button>
+      </div>
+      <ul class="admin-list" id="admin-list"></ul>
+    </section>
+
+    <!-- 3. Editor -->
+    <section id="editor" hidden>
+      <div class="field">
+        <label for="f-title">Title</label>
+        <input class="input input--title" id="f-title" type="text" placeholder="What did you build?">
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="f-date">Date</label>
+          <input class="input" id="f-date" type="date">
+        </div>
+        <div class="field">
+          <label for="f-slug">URL slug</label>
+          <input class="input" id="f-slug" type="text" placeholder="auto">
+        </div>
+        <div class="field">
+          <label for="f-tags">Tags</label>
+          <input class="input" id="f-tags" type="text" placeholder="rust, cli">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="f-summary">Summary <span style="text-transform:none">(one line, shown in the list)</span></label>
+        <input class="input" id="f-summary" type="text">
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        Drop or paste images here, or <button class="btn" id="pick-image" type="button" style="margin-left:.3rem">choose a file</button>
+        <input id="file-input" type="file" accept="image/*" multiple hidden>
+      </div>
+
+      <div class="field">
+        <label for="f-body">Body <span style="text-transform:none">(Markdown)</span></label>
+        <textarea class="input" id="f-body" spellcheck="true"></textarea>
+      </div>
+
+      <div id="preview" class="prose" hidden style="border-top:1px solid var(--rule);padding-top:1.5rem"></div>
+
+      <div class="toolbar">
+        <button class="btn btn-primary" id="publish" type="button">Publish</button>
+        <button class="btn" id="toggle-preview" type="button">Preview</button>
+        <button class="btn" id="cancel" type="button">Back</button>
+        <span class="spacer"></span>
+        <span class="status" id="editor-status"></span>
+        <button class="btn" id="delete" type="button" hidden>Delete</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="assets/config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="assets/app.js"></script>
+<script src="assets/admin.js"></script>
+<script>initAdmin();</script>
+</body>
+</html>
