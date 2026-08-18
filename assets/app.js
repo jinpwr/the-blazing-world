@@ -78,7 +78,6 @@ function mountChrome(current) {
     <nav class="nav">
       ${link("./", "posts", "home")}
       ${link("about.html", "about", "about")}
-      ${link("admin.html", "write", "admin")}
     </nav>`;
 }
 
