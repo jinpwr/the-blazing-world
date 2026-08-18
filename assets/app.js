@@ -64,21 +64,62 @@ function loadScript(src) {
   });
 }
 
+function slugify(s) {
+  return String(s).toLowerCase().trim()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+/* ---------- images in exports ---------- */
+const IMG_RE = /!\[([^\]]*)\]\(\s*([^)\s]+)([^)]*)\)/g;
+
+/** every local image path referenced by a markdown body */
+function imagePaths(md) {
+  const out = new Set();
+  for (const m of md.matchAll(IMG_RE)) {
+    const url = m[2];
+    if (!/^(https?:|data:|\/\/)/i.test(url)) out.add(url.replace(/^\.?\//, ""));
+  }
+  return [...out];
+}
+
+/** rewrite local image paths to full https URLs so the file works anywhere */
+function absolutiseImages(md) {
+  return md.replace(IMG_RE, (whole, alt, url, rest) =>
+    /^(https?:|data:|\/\/)/i.test(url)
+      ? whole
+      : `![${alt}](${new URL(url.replace(/^\.?\//, ""), location.href).href}${rest})`);
+}
+
+/** don't print until every image has actually loaded */
+async function imagesReady(root = document) {
+  const imgs = [...root.querySelectorAll("img")];
+  await Promise.all(imgs.map((img) =>
+    img.complete
+      ? Promise.resolve()
+      : new Promise((done) => { img.onload = img.onerror = done; })));
+  await new Promise((r) => setTimeout(r, 120)); // let layout settle
+}
+
 /* ---------- chrome ---------- */
-function mountChrome(current) {
-  document.title = current === "home"
-    ? SITE.title
-    : `${document.title} · ${SITE.title}`;
-  const mast = $("#masthead");
-  if (!mast) return;
+function navLinks(current) {
   const link = (href, label, key) =>
     `<a href="${href}"${current === key ? ' aria-current="page"' : ""}>${label}</a>`;
+  return [
+    link("./", "posts", "home"),
+    link("about.html", "about", "about"),
+    link("admin.html", "write", "admin")
+  ].join("");
+}
+
+function mountChrome(current) {
+  if (current !== "home") document.title = `${document.title} · ${SITE.title}`;
+  const mast = $("#masthead");
+  if (!mast) return;
   mast.innerHTML = `
     <h1><a href="./">${esc(SITE.title)}</a></h1>
-    <nav class="nav">
-      ${link("./", "posts", "home")}
-      ${link("about.html", "about", "about")}
-    </nav>`;
+    <nav class="nav">${navLinks(current)}</nav>`;
 }
 
 /* ---------- dropdown menu ---------- */
@@ -118,41 +159,59 @@ function fullMarkdown(meta, body) {
   return `${fm}\n${body.trim()}\n`;
 }
 
+/* single post: .md with image links pointing at the live site */
 async function exportPostMd(slug) {
   const raw = await loadMarkdown(slug);
-  download(`${slug}.md`, raw, "text/markdown;charset=utf-8");
+  download(`${slug}.md`, absolutiseImages(raw), "text/markdown;charset=utf-8");
 }
 
+/* single post: .md + its images, in a folder you can move anywhere */
+async function exportPostBundle(slug) {
+  await loadScript("https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js");
+  const raw = await loadMarkdown(slug);
+  const zip = new JSZip();
+  zip.file(`${slug}.md`, raw);
+  await addImages(zip, imagePaths(raw));
+  download(`${slug}.zip`, await zip.generateAsync({ type: "blob" }));
+}
+
+/* whole blog: every .md plus every image, relative links intact */
 async function exportAllMd(posts) {
   await loadScript("https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js");
   const zip = new JSZip();
-  const folder = zip.folder("posts");
+  const seen = new Set();
   for (const p of posts) {
-    folder.file(`${p.slug}.md`, await loadMarkdown(p.slug));
+    const raw = await loadMarkdown(p.slug);
+    zip.file(`${p.slug}.md`, raw);
+    for (const path of imagePaths(raw)) seen.add(path);
   }
+  await addImages(zip, [...seen]);
   zip.file("index.md", [
     `# ${SITE.title}`, "",
-    ...posts.map((p) => `- ${p.date} — [${p.title}](posts/${p.slug}.md)`)
+    ...posts.map((p) => `- ${p.date} — [${p.title}](${p.slug}.md)`)
   ].join("\n"));
-  const blob = await zip.generateAsync({ type: "blob" });
-  download(`${slugify(SITE.title) || "blog"}-markdown.zip`, blob);
+  download(`${slugify(SITE.title) || "blog"}-markdown.zip`, await zip.generateAsync({ type: "blob" }));
 }
 
-function exportPdf() {
+async function addImages(zip, paths) {
+  for (const path of paths) {
+    try {
+      const res = await fetch(bust(path));
+      if (res.ok) zip.file(path, await res.blob());
+    } catch { /* a missing image shouldn't sink the export */ }
+  }
+}
+
+async function exportPdf() {
+  await imagesReady();
   window.print(); // choose "Save as PDF" in the print dialog
-}
-
-function slugify(s) {
-  return String(s).toLowerCase().trim()
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/[^a-z0-9-]/g, "");
 }
 
 /* ---------- page: home ---------- */
 async function initHome() {
-  mountChrome("home");
-  $("#lede").textContent = SITE.tagline || "";
+  document.title = SITE.title;
+  renderHero();
+
   const list = $("#list");
   let posts = [];
   try {
@@ -161,29 +220,48 @@ async function initHome() {
     list.innerHTML = `<p class="status err">${esc(e.message)}</p>`;
     return;
   }
+
   if (!posts.length) {
     list.innerHTML = `<p class="note">No entries yet. <a href="admin.html">Write the first one.</a></p>`;
-    return;
+  } else {
+    const total = posts.length;
+    list.innerHTML = posts.map((p, i) => `
+      <article class="entry">
+        <div class="entry-meta"><span class="no">${String(total - i).padStart(3, "0")}</span> &nbsp;${esc(p.date)}</div>
+        <div>
+          <h2 class="entry-title"><a href="post.html?slug=${encodeURIComponent(p.slug)}">${esc(p.title)}</a></h2>
+          ${p.summary ? `<p class="entry-summary">${esc(p.summary)}</p>` : ""}
+          ${p.tags ? `<p class="entry-tags">${esc(p.tags)}</p>` : ""}
+        </div>
+      </article>`).join("");
   }
-  const total = posts.length;
-  list.innerHTML = posts.map((p, i) => `
-    <article class="entry">
-      <div class="entry-meta"><span class="no">${String(total - i).padStart(3, "0")}</span> &nbsp;${esc(p.date)}</div>
-      <div>
-        <h2 class="entry-title"><a href="post.html?slug=${encodeURIComponent(p.slug)}">${esc(p.title)}</a></h2>
-        ${p.summary ? `<p class="entry-summary">${esc(p.summary)}</p>` : ""}
-        ${p.tags ? `<p class="entry-tags">${esc(p.tags)}</p>` : ""}
-      </div>
-    </article>`).join("");
 
-  const btn = $("#export-all");
-  menu(btn, [
-    ["Download .md (zip)", () => exportAllMd(posts).catch((e) => alert(e.message))],
-    ["Save as .pdf", () => openPrintAll(posts)]
+  menu($("#export-all"), [
+    ["Download .md + images (zip)", () => exportAllMd(posts).catch((e) => alert(e.message))],
+    ["Save as .pdf", () => printAll(posts)]
   ]);
 }
 
-async function openPrintAll(posts) {
+function renderHero() {
+  const hero = $("#hero");
+  if (!hero) return;
+  const figure = SITE.cover
+    ? `<div class="hero-figure"><img src="${esc(SITE.cover)}" alt="${esc(SITE.coverAlt || "")}"
+         onerror="this.parentNode.classList.add('is-empty');this.remove();this.parentNode.textContent='add a 3:4 image at ' + window.SITE.cover"></div>`
+    : `<div class="hero-figure is-empty">set “cover” in assets/config.js</div>`;
+
+  hero.innerHTML = `
+    ${figure}
+    <div class="hero-body">
+      <nav class="hero-nav">${navLinks("home")}</nav>
+      <div>
+        <h1 class="hero-title">${esc(SITE.title)}</h1>
+        <p class="hero-tagline">${esc(SITE.tagline || "")}</p>
+      </div>
+    </div>`;
+}
+
+async function printAll(posts) {
   const holder = $("#print-all");
   holder.innerHTML = `<p class="note">Preparing ${posts.length} entries…</p>`;
   const parts = [];
@@ -197,6 +275,9 @@ async function openPrintAll(posts) {
   }
   holder.innerHTML = parts.join("");
   document.body.classList.add("printing-all");
+  holder.style.display = "block";      // force images to load before printing
+  await imagesReady(holder);
+  holder.style.display = "";
   window.print();
 }
 
@@ -224,7 +305,8 @@ async function initPost() {
 
   $("#edit-link").href = `admin.html?slug=${encodeURIComponent(slug)}`;
   menu($("#export-post"), [
-    ["Download .md", () => exportPostMd(slug).catch((e) => alert(e.message))],
+    ["Download .md (linked images)", () => exportPostMd(slug).catch((e) => alert(e.message))],
+    ["Download .md + images (zip)", () => exportPostBundle(slug).catch((e) => alert(e.message))],
     ["Save as .pdf", exportPdf]
   ]);
 }
